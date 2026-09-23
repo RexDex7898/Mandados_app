@@ -1,0 +1,9 @@
+{
+  "appId": "com.mandados.cliente",
+  "appName": "Mandados Cliente",
+  "webDir": "frontend",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  }
+}

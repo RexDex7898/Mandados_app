@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Mandados Cliente</string>
+    <string name="title_activity_main">Mandados Cliente</string>
+    <string name="package_name">com.mandados.cliente</string>
+    <string name="custom_url_scheme">com.mandados.cliente</string>
+</resources>
