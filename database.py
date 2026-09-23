@@ -2,25 +2,34 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# Obtiene la URL de la nube o usa la local de XAMPP si estás en tu PC
 DATABASE_URL = os.getenv(
     "DATABASE_URL", 
     "mysql+pymysql://root:@localhost:3306/mandados_db"
 )
 
-# Railway entrega 'mysql://...', lo adaptamos para PyMySQL
+# Adaptar el protocolo si viene como mysql://
 if DATABASE_URL and DATABASE_URL.startswith("mysql://"):
     DATABASE_URL = DATABASE_URL.replace("mysql://", "mysql+pymysql://", 1)
 
-# pool_pre_ping evita desconexiones por inactividad en la nube
+# Argumentos de conexión
+connect_args = {}
+
+# Si nos conectamos a TiDB Cloud en producción, activamos SSL con los certificados del sistema
+if "tidbcloud.com" in DATABASE_URL:
+    ca_path = "/etc/ssl/certs/ca-certificates.crt"
+    if os.path.exists(ca_path):
+        connect_args["ssl"] = {"ca": ca_path}
+    else:
+        connect_args["ssl"] = {"ssl_mode": "VERIFY_IDENTITY"}
+
 engine = create_engine(
     DATABASE_URL,
+    connect_args=connect_args,
     pool_pre_ping=True,
     pool_recycle=300
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 Base = declarative_base()
 
 def get_db():
