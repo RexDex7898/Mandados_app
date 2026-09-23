@@ -263,3 +263,18 @@ if __name__ == "__main__":
     import uvicorn
     puerto = int(os.getenv("PORT", 8000))
     uvicorn.run("main:app", host="0.0.0.0", port=puerto, reload=False)
+
+    # Esquema para recibir el token
+class RepartidorToken(BaseModel):
+    token: str
+
+@app.post("/notificaciones/suscribir-repartidor")
+def suscribir_repartidor_topic(datos: RepartidorToken):
+    if not firebase_admin._apps:
+        raise HTTPException(status_code=500, detail="Firebase no configurado")
+    try:
+        # Suscribe el celular al canal general "repartidores"
+        res = messaging.subscribe_to_topic([datos.token], "repartidores")
+        return {"ok": True, "suscrito": res.success_count}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
