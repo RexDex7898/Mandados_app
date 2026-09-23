@@ -2,13 +2,12 @@ from pydantic import BaseModel, ConfigDict
 from typing import Optional
 from datetime import datetime
 from decimal import Decimal
-
-# --- USUARIOS & AUTH ---
+# --- USUARIOS ---
 class UsuarioRegistro(BaseModel):
     nombre: str
     telefono: str
     password: str
-    rol: str = "cliente"  # "cliente" o "repartidor"
+    rol: str = "cliente"
 
 class UsuarioLogin(BaseModel):
     telefono: str
@@ -20,23 +19,25 @@ class UsuarioResponse(BaseModel):
     telefono: str
     rol: str
 
-    model_config = ConfigDict(from_attributes=True)
+    class Config:
+        from_attributes = True
 
 # --- PEDIDOS ---
 class PedidoCreate(BaseModel):
-    cliente_id: str
+    cliente_id: Optional[str] = None
     cliente_nombre: str
     cliente_telefono: str
+    cliente_fcm_token: Optional[str] = None  # <-- Recibe el token del celular
     descripcion: str
-    origen_direccion: str
+    origen_direccion: Optional[str] = None
     origen_lat: Optional[float] = None
     origen_lng: Optional[float] = None
     destino_direccion: str
     destino_lat: Optional[float] = None
     destino_lng: Optional[float] = None
-    costo_productos: Optional[Decimal] = Decimal("0.00")
-    metodo_pago: Optional[str] = "efectivo"
-    tipo: Optional[str] = "mandado_express"
+    costo_productos: float = 0.0
+    metodo_pago: str = "efectivo"
+    tipo: str = "mandado"
 
 class PedidoTomar(BaseModel):
     repartidor_id: str
@@ -48,24 +49,26 @@ class PedidoUpdateEstado(BaseModel):
 
 class PedidoResponse(BaseModel):
     id: str
-    cliente_id: Optional[str] = None
-    cliente_nombre: Optional[str] = None
-    cliente_telefono: Optional[str] = None
+    cliente_id: Optional[str]
+    cliente_nombre: str
+    cliente_telefono: str
+    cliente_fcm_token: Optional[str] = None
     repartidor_id: Optional[str] = None
     repartidor_nombre: Optional[str] = None
     repartidor_telefono: Optional[str] = None
     descripcion: str
-    origen_direccion: str
-    origen_lat: Optional[float] = None
-    origen_lng: Optional[float] = None
+    origen_direccion: Optional[str]
+    origen_lat: Optional[float]
+    origen_lng: Optional[float]
     destino_direccion: str
-    destino_lat: Optional[float] = None
-    destino_lng: Optional[float] = None
-    costo_envio: Decimal
-    costo_productos: Decimal
+    destino_lat: Optional[float]
+    destino_lng: Optional[float]
+    costo_productos: float
+    costo_envio: float
     metodo_pago: str
-    estado: str
     tipo: str
-    created_at: Optional[datetime]
+    estado: str
+    created_at: Optional[datetime] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    class Config:
+        from_attributes = True

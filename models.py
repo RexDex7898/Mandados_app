@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Numeric, DateTime, Enum
+from sqlalchemy import Column, String, Float, DateTime, Text
 from sqlalchemy.sql import func
 from database import Base
 
@@ -17,23 +17,25 @@ class Pedido(Base):
 
     id = Column(String(36), primary_key=True, index=True)
     cliente_id = Column(String(36), nullable=True)
-    cliente_nombre = Column(String(100), nullable=True)
-    cliente_telefono = Column(String(15), nullable=True)
+    cliente_nombre = Column(String(100), nullable=False)
+    cliente_telefono = Column(String(15), nullable=False)
+    cliente_fcm_token = Column(String(255), nullable=True)  # <-- Token FCM del cliente
     
     repartidor_id = Column(String(36), nullable=True)
     repartidor_nombre = Column(String(100), nullable=True)
     repartidor_telefono = Column(String(15), nullable=True)
 
-    descripcion = Column(String(255), nullable=False)
-    origen_direccion = Column(String(255), nullable=False)
-    origen_lat = Column(Numeric(10, 7), nullable=True)
-    origen_lng = Column(Numeric(10, 7), nullable=True)
+    descripcion = Column(Text, nullable=False)
+    origen_direccion = Column(String(255), nullable=True)
+    origen_lat = Column(Float, nullable=True)
+    origen_lng = Column(Float, nullable=True)
     destino_direccion = Column(String(255), nullable=False)
-    destino_lat = Column(Numeric(10, 7), nullable=True)
-    destino_lng = Column(Numeric(10, 7), nullable=True)
-    costo_envio = Column(Numeric(10, 2), default=35.00)
-    costo_productos = Column(Numeric(10, 2), default=0.00)
-    metodo_pago = Column(String(30), default="efectivo")
-    estado = Column(String(50), default="buscando_repartidor")
-    tipo = Column(String(50), default="mandado_express")
+    destino_lat = Column(Float, nullable=True)
+    destino_lng = Column(Float, nullable=True)
+
+    costo_productos = Column(Float, default=0.0)
+    costo_envio = Column(Float, default=35.0)
+    metodo_pago = Column(String(20), default="efectivo")
+    tipo = Column(String(30), default="mandado")
+    estado = Column(String(30), default="buscando_repartidor")
     created_at = Column(DateTime(timezone=True), server_default=func.now())

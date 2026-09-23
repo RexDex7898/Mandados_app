@@ -1,4 +1,5 @@
 import os
+import json
 import uuid
 import hashlib
 from typing import List, Optional
@@ -8,49 +9,66 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
+import firebase_admin
+from firebase_admin import credentials, messaging
+
 import models
 import schemas
 from database import engine, get_db
 
-# Inicialización de Firebase con la variable de entorno de Render
+# 1. Crear tablas si no existen
+models.Base.metadata.create_all(bind=engine)
+
+# 2. Inicializar Firebase Admin mediante la variable de entorno de Render
 firebase_creds_raw = os.getenv("FIREBASE_CREDENTIALS_JSON")
-if firebase_creds_raw:
+if firebase_creds_raw and not firebase_admin._apps:
     try:
         cred_dict = json.loads(firebase_creds_raw)
         cred = credentials.Certificate(cred_dict)
         firebase_admin.initialize_app(cred)
-        print("Firebase Admin inicializado correctamente.")
+        print("Firebase Admin SDK inicializado correctamente.")
     except Exception as e:
         print(f"Error al inicializar Firebase Admin: {e}")
 
-def enviar_notificacion_push(token_fcm: str, titulo: str, cuerpo: str):
-    """Envía una notificación individual a un dispositivo por su token FCM."""
+def enviar_push_individual(token_fcm: str, titulo: str, cuerpo: str):
+    """Envía notificación directa al dispositivo de un usuario específico (ej. Cliente)."""
     if not token_fcm or not firebase_admin._apps:
         return
     try:
         mensaje = messaging.Message(
             notification=messaging.Notification(
                 title=titulo,
-                body=cuerpo,
+                body=cuerpo
             ),
-            token=token_fcm,
+            token=token_fcm
         )
-        response = messaging.send(mensaje)
-        print(f"Notificación enviada: {response}")
+        messaging.send(mensaje)
     except Exception as err:
-        print(f"Error al enviar push notification: {err}")
+        print(f"Error al enviar push a token {token_fcm[:10]}...: {err}")
 
-# 1. Crear las tablas automáticamente en la base de datos de Railway
-models.Base.metadata.create_all(bind=engine)
+def notificar_tema_repartidores(titulo: str, cuerpo: str):
+    """Emite una alerta a todos los repartidores suscritos al topic 'repartidores'."""
+    if not firebase_admin._apps:
+        return
+    try:
+        mensaje = messaging.Message(
+            notification=messaging.Notification(
+                title=titulo,
+                body=cuerpo
+            ),
+            topic="repartidores"
+        )
+        messaging.send(mensaje)
+    except Exception as err:
+        print(f"Error al notificar topic repartidores: {err}")
 
-# 2. Inicializar FastAPI
+# 3. Inicializar FastAPI
 app = FastAPI(
     title="API de Mandados y Envíos - Villa de Tezontepec",
-    description="Backend en la nube para pedidos en tiempo real",
-    version="1.0.0"
+    description="Backend en la nube con soporte Push Notification",
+    version="1.1.0"
 )
 
-# 3. Configurar CORS (Permite llamadas desde Android y navegadores)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -62,7 +80,6 @@ app.add_middleware(
 def hashear_password(pwd: str) -> str:
     return hashlib.sha256(pwd.encode('utf-8')).hexdigest()
 
-# Esquema auxiliar para actualizar pedidos vía PUT
 class PedidoUpdateGeneral(BaseModel):
     estado: Optional[str] = None
     repartidor_id: Optional[str] = None
@@ -70,19 +87,12 @@ class PedidoUpdateGeneral(BaseModel):
     repartidor_telefono: Optional[str] = None
 
 # ==========================================
-# RUTA DE HEALTHCHECK
+# RUTAS BÁSICAS Y AUTENTICACIÓN
 # ==========================================
+
 @app.get("/")
 def estado_servidor():
-    return {
-        "estado": "online",
-        "servicio": "Mandados Express API",
-        "municipio": "Villa de Tezontepec"
-    }
-
-# ==========================================
-# RUTAS DE AUTENTICACIÓN
-# ==========================================
+    return {"estado": "online", "servicio": "Mandados Express API", "fcm_activo": bool(firebase_admin._apps)}
 
 @app.post("/auth/registro", response_model=schemas.UsuarioResponse)
 def registrar_usuario(datos: schemas.UsuarioRegistro, db: Session = Depends(get_db)):
@@ -116,17 +126,19 @@ def iniciar_sesion(datos: schemas.UsuarioLogin, db: Session = Depends(get_db)):
     return usuario
 
 # ==========================================
-# RUTAS DE PEDIDOS
+# RUTAS DE PEDIDOS Y NOTIFICACIONES
 # ==========================================
 
 @app.post("/pedidos/", response_model=schemas.PedidoResponse)
 def crear_pedido(pedido_in: schemas.PedidoCreate, db: Session = Depends(get_db)):
     nuevo_id = str(uuid.uuid4())
+    costo_envio = 35.00
     pedido_db = models.Pedido(
         id=nuevo_id,
         cliente_id=pedido_in.cliente_id,
         cliente_nombre=pedido_in.cliente_nombre,
         cliente_telefono=pedido_in.cliente_telefono,
+        cliente_fcm_token=pedido_in.cliente_fcm_token,
         descripcion=pedido_in.descripcion,
         origen_direccion=pedido_in.origen_direccion,
         origen_lat=pedido_in.origen_lat,
@@ -138,11 +150,19 @@ def crear_pedido(pedido_in: schemas.PedidoCreate, db: Session = Depends(get_db))
         metodo_pago=pedido_in.metodo_pago,
         tipo=pedido_in.tipo,
         estado="buscando_repartidor",
-        costo_envio=35.00
+        costo_envio=costo_envio
     )
     db.add(pedido_db)
     db.commit()
     db.refresh(pedido_db)
+
+    # 🔔 Alerta general a los repartidores
+    total = pedido_db.costo_productos + costo_envio
+    notificar_tema_repartidores(
+        titulo="¡Nuevo Mandado Disponible! 🛵💨",
+        cuerpo=f"{pedido_db.cliente_nombre} solicita: {pedido_db.descripcion} (Total: ${total:.2f})"
+    )
+
     return pedido_db
 
 @app.get("/pedidos/", response_model=List[schemas.PedidoResponse])
@@ -154,26 +174,6 @@ def obtener_pedido(pedido_id: str, db: Session = Depends(get_db)):
     pedido = db.query(models.Pedido).filter(models.Pedido.id == pedido_id).first()
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
-    return pedido
-
-# Endpoint unificado PUT para compatibilidad total con la app móvil
-@app.put("/pedidos/{pedido_id}", response_model=schemas.PedidoResponse)
-def actualizar_pedido_general(pedido_id: str, datos: PedidoUpdateGeneral, db: Session = Depends(get_db)):
-    pedido = db.query(models.Pedido).filter(models.Pedido.id == pedido_id).first()
-    if not pedido:
-        raise HTTPException(status_code=404, detail="Pedido no encontrado")
-
-    if datos.estado:
-        pedido.estado = datos.estado
-    if datos.repartidor_id:
-        pedido.repartidor_id = datos.repartidor_id
-    if datos.repartidor_nombre:
-        pedido.repartidor_nombre = datos.repartidor_nombre
-    if datos.repartidor_telefono:
-        pedido.repartidor_telefono = datos.repartidor_telefono
-
-    db.commit()
-    db.refresh(pedido)
     return pedido
 
 @app.patch("/pedidos/{pedido_id}/tomar", response_model=schemas.PedidoResponse)
@@ -189,23 +189,72 @@ def tomar_pedido(pedido_id: str, datos: schemas.PedidoTomar, db: Session = Depen
     
     db.commit()
     db.refresh(pedido)
+
+    # 🔔 Notificación al Cliente: Repartidor Asignado
+    if pedido.cliente_fcm_token:
+        enviar_push_individual(
+            token_fcm=pedido.cliente_fcm_token,
+            titulo="¡Repartidor Encontrado! 🛵",
+            cuerpo=f"{datos.repartidor_nombre} aceptó tu mandado y va a prepararlo."
+        )
+
     return pedido
 
 @app.patch("/pedidos/{pedido_id}/estado", response_model=schemas.PedidoResponse)
-def cambiar_estado_pedido(
-    pedido_id: str, 
-    datos: schemas.PedidoUpdateEstado, 
-    db: Session = Depends(get_db)
-):
+def cambiar_estado_pedido(pedido_id: str, datos: schemas.PedidoUpdateEstado, db: Session = Depends(get_db)):
     pedido = db.query(models.Pedido).filter(models.Pedido.id == pedido_id).first()
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
     
-    estados_validos = ["buscando_repartidor", "asignado", "en_camino", "entregado", "cancelado"]
+    estados_validos = ["buscando_repartidor", "asignado", "en_camino", "en_domicilio", "entregado", "cancelado"]
     if datos.estado not in estados_validos:
         raise HTTPException(status_code=400, detail="Estado no válido")
 
     pedido.estado = datos.estado
+    db.commit()
+    db.refresh(pedido)
+
+    # 🔔 Matriz de Notificaciones automáticas al Cliente según el estado
+    mensajes_estado = {
+        "en_camino": (
+            "¡Tu mandado va en camino! 🛒➡️🏠",
+            f"{pedido.repartidor_nombre} ya tiene tus productos y se dirige a tu domicilio."
+        ),
+        "en_domicilio": (
+            "¡Tu repartidor está afuera! 🚪🔔",
+            f"{pedido.repartidor_nombre} ha llegado con tu pedido. Por favor sal a recibirlo."
+        ),
+        "entregado": (
+            "Mandado Entregado Con Éxito ✅",
+            "¡Muchas gracias por usar Mandados Express Villa de Tezontepec!"
+        ),
+        "cancelado": (
+            "Mandado Cancelado ⚠️",
+            "Tu pedido ha sido cancelado. Contáctanos si requieres asistencia."
+        )
+    }
+
+    if datos.estado in mensajes_estado and pedido.cliente_fcm_token:
+        titulo, cuerpo = mensajes_estado[datos.estado]
+        enviar_push_individual(pedido.cliente_fcm_token, titulo, cuerpo)
+
+    return pedido
+
+@app.put("/pedidos/{pedido_id}", response_model=schemas.PedidoResponse)
+def actualizar_pedido_general(pedido_id: str, datos: PedidoUpdateGeneral, db: Session = Depends(get_db)):
+    pedido = db.query(models.Pedido).filter(models.Pedido.id == pedido_id).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
+    if datos.estado:
+        pedido.estado = datos.estado
+    if datos.repartidor_id:
+        pedido.repartidor_id = datos.repartidor_id
+    if datos.repartidor_nombre:
+        pedido.repartidor_nombre = datos.repartidor_nombre
+    if datos.repartidor_telefono:
+        pedido.repartidor_telefono = datos.repartidor_telefono
+
     db.commit()
     db.refresh(pedido)
     return pedido
