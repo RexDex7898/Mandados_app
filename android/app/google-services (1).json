@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "976636114697",
+    "project_id": "mandados-express-4d312",
+    "storage_bucket": "mandados-express-4d312.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:976636114697:android:ffdbed220e5cdaaed6c5d8",
+        "android_client_info": {
+          "package_name": "com.mandados.cliente"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBRPgqTrde89Gl5bVRlluwxvuxQabrSAyM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:976636114697:android:ae0201a5941fdabdd6c5d8",
+        "android_client_info": {
+          "package_name": "com.mandados.repartidor"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBRPgqTrde89Gl5bVRlluwxvuxQabrSAyM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

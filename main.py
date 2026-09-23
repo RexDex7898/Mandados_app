@@ -12,6 +12,34 @@ import models
 import schemas
 from database import engine, get_db
 
+# Inicialización de Firebase con la variable de entorno de Render
+firebase_creds_raw = os.getenv("FIREBASE_CREDENTIALS_JSON")
+if firebase_creds_raw:
+    try:
+        cred_dict = json.loads(firebase_creds_raw)
+        cred = credentials.Certificate(cred_dict)
+        firebase_admin.initialize_app(cred)
+        print("Firebase Admin inicializado correctamente.")
+    except Exception as e:
+        print(f"Error al inicializar Firebase Admin: {e}")
+
+def enviar_notificacion_push(token_fcm: str, titulo: str, cuerpo: str):
+    """Envía una notificación individual a un dispositivo por su token FCM."""
+    if not token_fcm or not firebase_admin._apps:
+        return
+    try:
+        mensaje = messaging.Message(
+            notification=messaging.Notification(
+                title=titulo,
+                body=cuerpo,
+            ),
+            token=token_fcm,
+        )
+        response = messaging.send(mensaje)
+        print(f"Notificación enviada: {response}")
+    except Exception as err:
+        print(f"Error al enviar push notification: {err}")
+
 # 1. Crear las tablas automáticamente en la base de datos de Railway
 models.Base.metadata.create_all(bind=engine)
 
